@@ -1,9 +1,14 @@
-# Personal Document Q&A System (RAG with Django + Gemini + ChromaDB)
+# Document Q&A System (RAG with Django REST Framework + Gemini + ChromaDB)
 
-A web application that lets you upload personal PDFs (resumes, ebooks, notes) and ask
+A decoupled web application that lets you upload PDFs (resumes, ebooks, notes) and ask
 natural-language questions about them. Answers are **grounded** in your uploaded
 documents using a **Retrieval-Augmented Generation (RAG)** pipeline, so the model
 answers from *your* content instead of guessing.
+
+The backend is a **Django REST Framework (DRF) API** that can be tested independently
+(Postman, curl, or the DRF browsable API). The frontend is a thin JavaScript
+single-page client that calls the same API — so the frontend and backend are fully
+separated.
 
 > Interview-ready README: it documents every feature, explains the full RAG pipeline
 > with examples and sample outputs per component, describes how the LLM is used, and
@@ -19,28 +24,34 @@ answers from *your* content instead of guessing.
 4. [Feature List (Every Functionality)](#4-feature-list-every-functionality)
 5. [High-Level Architecture](#5-high-level-architecture)
 6. [End-to-End Workflow](#6-end-to-end-workflow)
-7. [The RAG Pipeline (Component by Component, with Examples)](#7-the-rag-pipeline-component-by-component-with-examples)
-8. [How the LLM Is Used](#8-how-the-llm-is-used)
-9. [Data Model](#9-data-model)
-10. [Configuration (.env)](#10-configuration-env)
-11. [Run Locally](#11-run-locally)
-12. [Common Interview Questions & Answers](#12-common-interview-questions--answers)
-13. [Limitations & Future Work](#13-limitations--future-work)
+7. [API Endpoints](#7-api-endpoints)
+8. [The RAG Pipeline (Component by Component, with Examples)](#8-the-rag-pipeline-component-by-component-with-examples)
+9. [How the LLM Is Used](#9-how-the-llm-is-used)
+10. [Data Model](#10-data-model)
+11. [Configuration (.env)](#11-configuration-env)
+12. [Run Locally](#12-run-locally)
+13. [Common Interview Questions & Answers](#13-common-interview-questions--answers)
+14. [Limitations & Future Work](#14-limitations--future-work)
 
 ---
 
 ## 1. What This Project Does
 
-- Upload a **PDF** through a web page.
+- Upload a **PDF** (via the REST API or the web page).
 - The system **extracts text**, **splits it into chunks**, **embeds** each chunk into a
   vector, and **stores** those vectors in a local vector database (ChromaDB).
 - You then **ask a question**. The question is embedded, the most relevant chunks are
   **retrieved** by semantic similarity, and a **Large Language Model (Gemini)** writes an
   answer using *only* those retrieved chunks.
-- The answer is shown along with the **source document name and page numbers**.
+- The answer is returned as JSON with the **source document name and page numbers**.
 
 This is a classic **RAG (Retrieval-Augmented Generation)** system: retrieval brings in
 facts, generation turns them into a readable answer.
+
+**Architecture note:** all operations are exposed as a **DRF REST API**. The HTML page
+is a thin JavaScript client that consumes that API — the same endpoints you can hit in
+Postman. Business logic lives in a reusable **service layer** (`services.py`), separate
+from both the API and the frontend.
 
 ---
 
@@ -48,14 +59,15 @@ facts, generation turns them into a readable answer.
 
 | Layer | Technology | Role |
 |-------|-----------|------|
-| Web framework | **Django 5.2+** | Routing, views, templates, admin, ORM |
+| Web framework | **Django 5.2+** | Project, ORM, admin, URL routing |
+| REST API | **Django REST Framework** | JSON API: serializers, views, validation |
 | Database (metadata) | **SQLite** (`db.sqlite3`) | Stores `Document` records + indexing status |
 | Vector database | **ChromaDB** (`chroma_db/`) | Stores chunk text, embeddings, metadata |
 | PDF parsing | **pypdf** | Extract text from PDF pages |
 | Embeddings | **Google Gemini** (`gemini-embedding-001`) | Turn text into 768-dim vectors |
 | LLM / generation | **Google Gemini** (`gemini` chat model) | Generate grounded answers |
 | Config | **python-dotenv** | Load secrets/settings from `.env` |
-| Frontend | **Django templates + vanilla HTML/CSS** | Upload + chat UI |
+| Frontend | **Vanilla HTML/CSS + JavaScript (`fetch`)** | Thin client that calls the REST API |
 
 ---
 
@@ -69,63 +81,76 @@ Document Q&A System/
 ├── db.sqlite3                     # Document metadata (SQLite)
 ├── chroma_db/                     # Persistent local vector store (ChromaDB)
 ├── media/documents/               # Uploaded PDF files
-├── templates/documents/home.html  # Active UI (upload + chat)
+├── templates/documents/home.html  # Thin JS frontend (calls the REST API)
 │
 ├── rag_project/                   # Django project config
-│   ├── settings.py                # Django, Gemini, media, ChromaDB config
+│   ├── settings.py                # Django, DRF, Gemini, media, ChromaDB config
 │   ├── urls.py                    # Root URL routing + media serving in DEBUG
 │   └── wsgi.py                    # WSGI entry point
 │
 └── documents/                     # Main Django app
     ├── models.py                  # Document model (metadata + status)
-    ├── views.py                   # Upload / delete / ask request handlers
+    ├── serializers.py             # DRF serializers (validation + JSON shaping)
+    ├── api.py                     # ★ DRF API views (upload, list, delete, ask)
+    ├── views.py                   # Single view: serves the HTML shell (no logic)
     ├── services.py                # ★ RAG core: extract, chunk, embed, retrieve, answer
-    ├── urls.py                    # App URL routing
+    ├── urls.py                    # App URL routing (HTML page + API routes)
     ├── admin.py                   # Django admin registration
     ├── apps.py                    # App config
     └── migrations/                # DB schema migrations
 ```
 
-The **heart of the project is `documents/services.py`** — it contains the entire RAG
-pipeline.
+Two files carry the weight:
+- **`documents/services.py`** — the entire RAG pipeline + shared orchestration.
+- **`documents/api.py`** — the REST API layer (thin; delegates to `services.py`).
+
+`views.py` is deliberately tiny — it only renders the HTML page. All real work happens
+through the API, so the backend is fully testable on its own.
 
 ---
 
 ## 4. Feature List (Every Functionality)
 
 ### Document Management
-- **Upload PDF** — Upload a PDF via the web form. Only `.pdf` files are accepted
-  (validated by extension). Non-PDF uploads are rejected with an error message.
+- **Upload PDF (API)** — `POST /api/documents/` with a multipart `file`. Only `.pdf`
+  files are accepted (validated by a DRF serializer). Non-PDF uploads return `400`.
 - **Automatic indexing on upload** — As soon as a PDF is uploaded, it is parsed,
-  chunked, embedded, and stored in the vector database in one step.
+  chunked, embedded, and stored in the vector database in one step
+  (`services.create_and_index_document()`).
 - **Indexing status tracking** — Each document records `page_count`, `chunk_count`,
   `indexed` (boolean), and an `error_message` if indexing failed.
-- **Document library view** — The sidebar lists all uploaded documents with page count,
-  chunk count, and an "Indexed" badge.
-- **Delete document** — Deletes the document from **three places** at once: the vector
-  DB (all its chunks), the media file on disk, and the SQLite record. Confirmation
-  prompt in the UI prevents accidental deletion.
-- **Error surfacing** — Any failure (missing API key, unreadable PDF, no extractable
-  text) is shown to the user as a friendly message via Django's messages framework.
+- **List documents (API)** — `GET /api/documents/` returns all documents as JSON with
+  page count, chunk count, and indexing status. The frontend renders this list.
+- **Delete document (API)** — `DELETE /api/documents/<id>/` removes the document from
+  **three places** at once: the vector DB (all its chunks), the media file on disk, and
+  the SQLite record. The frontend adds a confirmation prompt.
+- **Structured error handling** — Failures return JSON `{"detail": "..."}` with the
+  right HTTP status (`400` for validation/RAG errors, `404` not found, `502` for
+  Gemini failures).
 
 ### Question Answering
-- **Ask a question** — Type a natural-language question in the chat box.
+- **Ask a question (API)** — `POST /api/ask/` with JSON `{"question": "..."}`.
 - **Semantic retrieval** — Retrieves the 5 most relevant chunks across all documents by
   vector similarity (cosine distance).
-- **Optional document filtering** — `answer_question()` supports a `document_ids`
-  filter so retrieval can be scoped to specific documents (the plumbing exists; UI
-  currently asks across all documents).
+- **Optional document filtering** — `POST /api/ask/` accepts an optional `document_ids`
+  list to scope retrieval to specific documents.
 - **Grounded answer generation** — Gemini answers using only the retrieved context and
   is instructed to say it "could not find it" when the answer isn't present (reduces
   hallucination).
-- **Source citations** — Each answer displays the source document name and page numbers
-  the answer was drawn from.
+- **Source citations** — The response includes a `sources` array of `{name, page}` the
+  answer was drawn from.
 
 ### Platform / Framework Features
+- **Decoupled frontend/backend** — The DRF API is the single backend; the HTML page is a
+  thin JS client using `fetch`. The API is CSRF-exempt and open (`AllowAny`) for easy
+  Postman/browser testing.
+- **DRF browsable API** — Every endpoint has an interactive UI in the browser.
+- **Reusable service layer** — Upload/index/retrieve/answer logic lives in
+  `services.py`, called by the API (and re-usable anywhere) — not duplicated in views.
 - **Django admin** — `Document` records are manageable at `/admin/` with list display,
   filters, and search by name.
-- **Environment-driven config** — Models, hosts, API keys, and paths are all read from
-  `.env` so no secrets are hardcoded.
+- **Environment-driven config** — Hosts, API keys, model names, and paths are all read
+  from `.env` so no secrets are hardcoded.
 - **Persistent vector store** — ChromaDB is a `PersistentClient`, so embeddings survive
   server restarts.
 - **Reusable Gemini client** — The Gemini client is cached (`lru_cache`) so one client
@@ -137,26 +162,27 @@ pipeline.
 ## 5. High-Level Architecture
 
 ```
+        ┌─────────────────────────┐          ┌─────────────────────────┐
+        │   JS Frontend (fetch)   │          │   Postman / curl / DRF  │
+        │  templates/home.html    │          │      browsable API      │
+        └────────────┬────────────┘          └────────────┬────────────┘
+                     │ HTTP + JSON                         │ HTTP + JSON
+                     └──────────────────┬──────────────────┘
+                                        ▼
                         ┌───────────────────────────────────────────────┐
-                        │                   Browser (UI)                  │
-                        │        templates/documents/home.html            │
-                        │   Upload form · Ask form · Document library     │
-                        └───────────────┬─────────────────┬───────────────┘
-                                        │ POST            │ POST
-                             (action=upload/delete)  (action=ask)
-                                        ▼                 ▼
+                        │            DRF REST API (api.py)                │
+                        │  GET/POST /api/documents/                       │
+                        │  GET/DELETE /api/documents/<id>/                │
+                        │  POST /api/ask/                                 │
+                        │  (serializers.py handles validation + JSON)     │
+                        └───────────────────────┬─────────────────────────┘
+                                                │ calls
+                                                ▼
                         ┌───────────────────────────────────────────────┐
-                        │              Django View (views.py)             │
-                        │   home() dispatches to handlers by "action"     │
-                        └───────────────┬─────────────────┬───────────────┘
-                                        │                 │
-                          index_document()/         answer_question()
-                          delete_document_data()          │
-                                        ▼                 ▼
-                        ┌───────────────────────────────────────────────┐
-                        │            RAG Core (services.py)               │
+                        │          Service Layer (services.py)            │
+                        │  create_and_index_document · answer_question ·  │
                         │  pypdf · chunking · embeddings · retrieval ·    │
-                        │  prompt building · generation                   │
+                        │  prompt building · generation · delete          │
                         └───┬──────────────┬──────────────┬───────────────┘
                             │              │              │
                             ▼              ▼              ▼
@@ -164,7 +190,16 @@ pipeline.
                    │  SQLite      │ │  ChromaDB  │ │  Gemini API  │
                    │ (metadata)   │ │ (vectors)  │ │ (embed+chat) │
                    └──────────────┘ └────────────┘ └──────────────┘
+
+        views.py → serves only the HTML shell (no business logic).
 ```
+
+**Layered by responsibility:**
+- **Frontend / API clients** — anything that speaks HTTP+JSON (the JS page, Postman).
+- **API layer (`api.py` + `serializers.py`)** — validates input, shapes JSON, maps
+  errors to HTTP status codes. Thin; no RAG logic.
+- **Service layer (`services.py`)** — all business/RAG logic. Reusable, framework-light.
+- **Data layer** — SQLite (metadata), ChromaDB (vectors), Gemini (embed + generate).
 
 **Two data stores, by design:**
 - **SQLite** holds *document metadata* (name, page/chunk counts, status). Good for
@@ -177,27 +212,68 @@ pipeline.
 ## 6. End-to-End Workflow
 
 ### A. Indexing (happens once per uploaded PDF)
-1. User uploads a PDF → `views.handle_document_upload()`.
-2. A `Document` row is created in SQLite.
-3. `services.index_document()` runs:
+1. Client calls `POST /api/documents/` with a PDF → `api.DocumentListCreateAPIView`.
+2. `DocumentUploadSerializer` validates the file is a `.pdf`.
+3. `services.create_and_index_document()` runs:
+   - Creates a `Document` row in SQLite.
    - `pypdf` extracts text page by page.
    - Each page's text is split into overlapping chunks.
    - Gemini embeds all chunks (`task_type="RETRIEVAL_DOCUMENT"`).
    - Chunks + embeddings + metadata are stored in ChromaDB.
-4. The `Document` row is updated with `page_count`, `chunk_count`, `indexed=True`.
+   - The `Document` row is updated with `page_count`, `chunk_count`, `indexed=True`.
+4. The API returns the created document as JSON (`201`).
 
 ### B. Querying (happens every time a question is asked)
-1. User submits a question → `views.home()` with `action="ask"`.
-2. `services.answer_question()` runs:
+1. Client calls `POST /api/ask/` with `{"question": "..."}` → `api.AskAPIView`.
+2. `AskSerializer` validates the question (and optional `document_ids`).
+3. `services.answer_question()` runs:
    - Embed the question (`task_type="RETRIEVAL_QUERY"`).
    - Query ChromaDB for the top 5 most similar chunks.
    - Build a prompt containing the retrieved context + the question.
    - Send the prompt to Gemini's chat model.
-3. The answer + source (name, page) list are rendered back into the page.
+4. The API returns JSON: `{"question": ..., "answer": ..., "sources": [{name, page}]}`.
 
 ---
 
-## 7. The RAG Pipeline (Component by Component, with Examples)
+## 7. API Endpoints
+
+All endpoints are CSRF-exempt and open (`AllowAny`) for easy testing. Base URL in
+development: `http://127.0.0.1:8000`.
+
+| Method | Endpoint | Body | Success | Purpose |
+|--------|----------|------|---------|---------|
+| `GET` | `/api/documents/` | — | `200` | List all documents (JSON) |
+| `POST` | `/api/documents/` | multipart `file` | `201` | Upload + index a PDF |
+| `GET` | `/api/documents/<id>/` | — | `200` | Retrieve one document |
+| `DELETE` | `/api/documents/<id>/` | — | `204` | Delete from all stores |
+| `POST` | `/api/ask/` | JSON `{"question": "...", "document_ids": [1,2]?}` | `200` | Ask a grounded question |
+| `GET` | `/` | — | `200` | HTML frontend (JS client) |
+
+**Example — ask a question (curl):**
+```bash
+curl -X POST http://127.0.0.1:8000/api/ask/ \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What backend experience do I have?"}'
+```
+
+**Example response:**
+```json
+{
+  "question": "What backend experience do I have?",
+  "answer": "Based on your documents, you worked as a Backend Developer Intern ...",
+  "sources": [
+    {"name": "Sushant_Patil-CSE.pdf", "page": 2},
+    {"name": "Sushant_Patil-CSE.pdf", "page": 1}
+  ]
+}
+```
+
+**Error shape (all endpoints):** `{"detail": "message"}` with an appropriate status
+(`400` validation/RAG error, `404` not found, `502` Gemini/generation failure).
+
+---
+
+## 8. The RAG Pipeline (Component by Component, with Examples)
 
 RAG = **R**etrieval **A**ugmented **G**eneration. Instead of asking the LLM to answer
 from memory, we *retrieve* relevant facts from the user's documents and *augment* the
@@ -350,7 +426,7 @@ answer.
 
 ---
 
-## 8. How the LLM Is Used
+## 9. How the LLM Is Used
 
 This project uses **Google Gemini** in **two distinct roles**:
 
@@ -375,7 +451,7 @@ This project uses **Google Gemini** in **two distinct roles**:
 
 ---
 
-## 9. Data Model
+## 10. Data Model
 
 `documents/models.py` — the `Document` model (stored in SQLite):
 
@@ -395,7 +471,7 @@ display, filters, and search.
 
 ---
 
-## 10. Configuration (.env)
+## 11. Configuration (.env)
 
 All configuration is read from `.env` via `python-dotenv`. Key variables:
 
@@ -416,7 +492,7 @@ All configuration is read from `.env` via `python-dotenv`. Key variables:
 
 ---
 
-## 11. Run Locally
+## 12. Run Locally
 
 Use the workspace virtual environment (PowerShell on Windows):
 
@@ -427,7 +503,10 @@ python manage.py migrate
 python manage.py runserver
 ```
 
-Then open `http://127.0.0.1:8000/`.
+**Use it two ways:**
+- **Frontend:** open `http://127.0.0.1:8000/` — the JS page drives the API.
+- **API directly:** hit the endpoints in Postman/curl, or use the DRF browsable API by
+  visiting `http://127.0.0.1:8000/api/documents/` in a browser.
 
 Useful commands:
 
@@ -440,7 +519,7 @@ python manage.py createsuperuser   # to use /admin
 
 ---
 
-## 12. Common Interview Questions & Answers
+## 13. Common Interview Questions & Answers
 
 **Q: What is RAG and why use it here?**
 Retrieval-Augmented Generation. The LLM doesn't know your private PDFs, so we retrieve
@@ -475,17 +554,32 @@ nearest vectors to the question embedding. We take the top 5.
 `delete_document_data()` removes the chunks from ChromaDB (by `document_id`), deletes the
 file from disk, and deletes the SQLite record — keeping all three stores consistent.
 
+**Q: How is the backend decoupled from the frontend?**
+All operations are exposed through a Django REST Framework API (`api.py`). The HTML page
+is a thin JavaScript client that calls those endpoints with `fetch`. Because the API
+returns JSON and holds no presentation logic, it can be tested standalone in Postman and
+the frontend could be swapped for React/Vue without touching the backend.
+
+**Q: Why a separate service layer?**
+`services.py` holds all business/RAG logic so it isn't duplicated across the API and any
+other caller. The API layer stays thin — it validates input, calls a service function,
+and shapes the JSON response. This keeps concerns separated and the logic reusable.
+
+**Q: How do the serializers help?**
+DRF serializers validate and shape data at the boundary. `DocumentUploadSerializer`
+rejects non-PDFs, `AskSerializer` validates the question and optional `document_ids`, and
+`DocumentSerializer`/`AnswerSerializer` produce consistent JSON responses.
+
 ---
 
-## 13. Limitations & Future Work
+## 14. Limitations & Future Work
 
 - **Text-only PDFs:** scanned/image PDFs aren't supported (would need OCR, e.g.
   Tesseract).
 - **No chat history / multi-turn memory:** each question is answered independently.
-- **Fixed top-k = 5:** retrieval depth isn't tunable from the UI.
-- **No per-document scoping in UI:** the backend supports `document_ids` filtering, but
-  the UI asks across all documents.
-- **No authentication:** anyone with access can upload/query; add login for multi-user.
+- **Fixed top-k = 5:** retrieval depth isn't tunable from the request.
+- **No authentication:** the API is open (`AllowAny`) and CSRF-exempt for easy testing;
+  add token/session auth before deploying for multi-user use.
 - **Synchronous indexing:** large PDFs block the request; a background task queue (e.g.
   Celery) would improve UX.
 - **Basic error handling:** could add retries/rate-limit handling for the Gemini API.
