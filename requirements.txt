@@ -1,0 +1,6 @@
+Django>=5.2
+djangorestframework
+chromadb
+google-genai
+pypdf
+python-dotenv

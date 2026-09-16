@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Document Q&A</title>
+    <style>
+        :root {
+            --ink: #1d2b2f;
+            --muted: #718087;
+            --line: #dce5e3;
+            --paper: #ffffff;
+            --canvas: #f3f6f3;
+            --sage-deep: #35634f;
+            --terracotta: #b75d43;
+            --question: #e5eee8;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            background: var(--canvas);
+            color: var(--ink);
+            font-family: "Trebuchet MS", Verdana, sans-serif;
+        }
+
+        main { max-width: 1180px; margin: 0 auto; padding: 26px 24px 56px; }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            padding-bottom: 28px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .brand { display: flex; align-items: center; gap: 11px; }
+        .brand-mark {
+            display: grid;
+            width: 34px;
+            height: 34px;
+            place-items: center;
+            background: var(--ink);
+            color: #fff;
+            font: 700 16px Georgia, serif;
+        }
+        .brand-name { font: 700 15px Georgia, serif; letter-spacing: .2px; }
+        .status-note { color: var(--muted); font-size: 12px; }
+
+        .intro { max-width: 620px; padding: 42px 0 30px; }
+        .eyebrow { color: var(--sage-deep); font-size: 11px; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase; }
+        h1 { margin: 0 0 11px; font: 500 clamp(36px, 5vw, 62px)/.98 Georgia, serif; letter-spacing: -.8px; }
+        .intro p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.65; }
+
+        .layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 22px; align-items: start; }
+        .panel { background: var(--paper); border: 1px solid var(--line); box-shadow: 0 12px 28px rgba(39, 62, 58, .055); }
+        .chat-panel { min-width: 0; padding: 24px; }
+        .library-panel { padding: 21px; }
+        .panel-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+        h2 { margin: 0; font: 500 25px Georgia, serif; }
+        .panel-kicker { color: var(--muted); font-size: 12px; }
+
+        .chat-empty { padding: 30px 18px 34px; text-align: center; border: 1px dashed #c7d5cd; background: #fbfdfb; }
+        .chat-empty strong { display: block; margin-bottom: 7px; font: 500 19px Georgia, serif; }
+        .chat-empty span { color: var(--muted); font-size: 13px; line-height: 1.55; }
+        .conversation { display: grid; gap: 17px; margin-bottom: 24px; }
+        .message { max-width: 88%; padding: 15px 17px; font-size: 15px; line-height: 1.65; }
+        .message-label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: 1.3px; text-transform: uppercase; }
+        .question-message { justify-self: end; background: var(--question); border: 1px solid #d4e2d9; }
+        .answer-message { justify-self: start; background: #fff; border: 1px solid var(--line); white-space: pre-wrap; }
+        .sources { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 16px; }
+        .source { padding: 6px 9px; background: #f1f5f2; color: var(--sage-deep); font-size: 11px; line-height: 1.3; }
+
+        .composer { border-top: 1px solid var(--line); padding-top: 20px; }
+        label { display: block; margin-bottom: 8px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+        textarea { display: block; width: 100%; min-height: 86px; resize: vertical; border: 1px solid #cddbd5; padding: 13px 14px; outline: 0; color: var(--ink); background: #fcfefd; font: 15px/1.5 "Trebuchet MS", Verdana, sans-serif; }
+        textarea:focus { border-color: var(--sage-deep); box-shadow: 0 0 0 3px rgba(53, 99, 79, .1); }
+        .composer-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 11px; }
+        .composer-hint { color: var(--muted); font-size: 11px; }
+        button { border: 0; background: var(--ink); color: #fff; padding: 12px 17px; font: 700 12px "Trebuchet MS", Verdana, sans-serif; cursor: pointer; }
+        button:hover { background: var(--sage-deep); }
+        button:disabled { opacity: .5; cursor: default; }
+
+        .upload-box { margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+        input[type=file] { width: 100%; padding: 10px 0; color: var(--muted); font-size: 12px; }
+        .upload-box button { width: 100%; background: var(--sage-deep); }
+        .upload-box button:hover { background: var(--ink); }
+        .doc { padding: 14px 0; border-top: 1px solid var(--line); }
+        .doc:first-of-type { border-top: 0; padding-top: 0; }
+        .document-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+        .doc-name { min-width: 0; overflow-wrap: anywhere; font-size: 13px; font-weight: 700; line-height: 1.4; }
+        .doc-meta { margin-top: 5px; color: var(--muted); font-size: 11px; }
+        .status { display: inline-block; margin-left: 7px; color: var(--sage-deep); font-size: 10px; font-weight: 700; }
+        .delete-button { flex-shrink: 0; padding: 6px 9px; background: transparent; color: var(--terracotta); border: 1px solid #e2bdb4; font-size: 10px; }
+        .delete-button:hover { background: var(--terracotta); color: #fff; }
+
+        .toast { padding: 11px 14px; margin-bottom: 7px; background: #fff8f2; border-left: 3px solid var(--terracotta); font-size: 13px; }
+        .toast.ok { background: #f1f7f2; border-left-color: var(--sage-deep); }
+        #toasts { margin: 0 0 20px; }
+
+        @media (max-width: 780px) {
+            main { padding: 20px 16px 42px; }
+            .layout { grid-template-columns: 1fr; }
+            .message { max-width: 94%; }
+        }
+    </style>
+</head>
+
+<body>
+    <main>
+        <header class="topbar">
+            <div class="brand"><span class="brand-mark">Q</span><span class="brand-name">Document Q&A</span></div>
+            <span class="status-note">Frontend talks to the DRF API</span>
+        </header>
+
+        <section class="intro">
+            <div class="eyebrow">Knowledge base</div>
+            <h1>Ask your documents anything.</h1>
+            <p>Upload a PDF and get answers grounded in its content. This page is a thin
+               client &mdash; every action calls the REST API you can also test in Postman.</p>
+        </section>
+
+        <div id="toasts"></div>
+
+        <div class="layout">
+            <section class="panel chat-panel">
+                <div class="panel-heading">
+                    <h2>Conversation</h2>
+                    <span class="panel-kicker">Answers from your files</span>
+                </div>
+
+                <div id="conversation" class="conversation" hidden></div>
+                <div id="chatEmpty" class="chat-empty">
+                    <strong>Your document assistant is ready.</strong>
+                    <span>Ask about experience, projects, skills, dates, or any detail in your indexed PDFs.</span>
+                </div>
+
+                <div class="composer">
+                    <form id="askForm">
+                        <label for="question">Your question</label>
+                        <textarea id="question" name="question" placeholder="What backend experience do I have?" required></textarea>
+                        <div class="composer-footer">
+                            <span class="composer-hint">Answers stay grounded in indexed documents.</span>
+                            <button type="submit" id="askButton">Ask question</button>
+                        </div>
+                    </form>
+                </div>
+            </section>
+
+            <aside class="panel library-panel">
+                <div class="panel-heading"><h2>Documents</h2><span class="panel-kicker">Library</span></div>
+                <div class="upload-box">
+                    <form id="uploadForm">
+                        <label for="document">Upload a PDF</label>
+                        <input id="document" type="file" name="file" accept="application/pdf" required>
+                        <button type="submit" id="uploadButton">Upload and index</button>
+                    </form>
+                </div>
+                <div id="documentList"><p class="doc-meta">Loading documents&hellip;</p></div>
+            </aside>
+        </div>
+    </main>
+
+    <script>
+        // ---- Thin API client. No business logic here; the DRF API does the work. ----
+        const API = {
+            documents: "/api/documents/",
+            document: (id) => `/api/documents/${id}/`,
+            ask: "/api/ask/",
+        };
+
+        const els = {
+            toasts: document.getElementById("toasts"),
+            documentList: document.getElementById("documentList"),
+            uploadForm: document.getElementById("uploadForm"),
+            uploadButton: document.getElementById("uploadButton"),
+            fileInput: document.getElementById("document"),
+            askForm: document.getElementById("askForm"),
+            askButton: document.getElementById("askButton"),
+            question: document.getElementById("question"),
+            conversation: document.getElementById("conversation"),
+            chatEmpty: document.getElementById("chatEmpty"),
+        };
+
+        function toast(message, ok = false) {
+            const div = document.createElement("div");
+            div.className = "toast" + (ok ? " ok" : "");
+            div.textContent = message;
+            els.toasts.appendChild(div);
+            setTimeout(() => div.remove(), 5000);
+        }
+
+        function escapeHtml(text) {
+            const span = document.createElement("span");
+            span.textContent = text == null ? "" : String(text);
+            return span.innerHTML;
+        }
+
+        // ---- Load and render the document library from the API ----
+        async function loadDocuments() {
+            try {
+                const response = await fetch(API.documents, { headers: { Accept: "application/json" } });
+                const documents = await response.json();
+                renderDocuments(documents);
+            } catch (error) {
+                els.documentList.innerHTML = `<p class="doc-meta">Could not load documents.</p>`;
+            }
+        }
+
+        function renderDocuments(documents) {
+            if (!documents.length) {
+                els.documentList.innerHTML = `<p class="doc-meta">No PDFs indexed yet.</p>`;
+                return;
+            }
+            els.documentList.innerHTML = documents.map((doc) => `
+                <div class="doc">
+                    <div class="document-row">
+                        <div class="doc-name">${escapeHtml(doc.name)}${doc.indexed ? '<span class="status">Indexed</span>' : ''}</div>
+                        <button class="delete-button" data-id="${doc.id}">Delete</button>
+                    </div>
+                    <div class="doc-meta">${doc.page_count} pages &middot; ${doc.chunk_count} chunks</div>
+                </div>
+            `).join("");
+
+            els.documentList.querySelectorAll(".delete-button").forEach((button) => {
+                button.addEventListener("click", () => deleteDocument(button.dataset.id));
+            });
+        }
+
+        // ---- Upload a PDF via the API (multipart) ----
+        els.uploadForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            if (!els.fileInput.files.length) return;
+
+            const formData = new FormData();
+            formData.append("file", els.fileInput.files[0]);
+
+            els.uploadButton.disabled = true;
+            els.uploadButton.textContent = "Indexing\u2026";
+            try {
+                const response = await fetch(API.documents, { method: "POST", body: formData });
+                const data = await response.json();
+                if (response.ok) {
+                    toast(`${data.name} was indexed successfully.`, true);
+                    els.uploadForm.reset();
+                    loadDocuments();
+                } else {
+                    toast(data.detail || "Upload failed.");
+                }
+            } catch (error) {
+                toast("Upload failed: " + error.message);
+            } finally {
+                els.uploadButton.disabled = false;
+                els.uploadButton.textContent = "Upload and index";
+            }
+        });
+
+        // ---- Delete a document via the API ----
+        async function deleteDocument(id) {
+            if (!confirm("Delete this document?")) return;
+            try {
+                const response = await fetch(API.document(id), { method: "DELETE" });
+                if (response.status === 204) {
+                    toast("Document was deleted.", true);
+                    loadDocuments();
+                } else {
+                    const data = await response.json().catch(() => ({}));
+                    toast(data.detail || "Could not delete document.");
+                }
+            } catch (error) {
+                toast("Delete failed: " + error.message);
+            }
+        }
+
+        // ---- Ask a question via the API ----
+        els.askForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const question = els.question.value.trim();
+            if (!question) return;
+
+            els.askButton.disabled = true;
+            els.askButton.textContent = "Thinking\u2026";
+            try {
+                const response = await fetch(API.ask, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", Accept: "application/json" },
+                    body: JSON.stringify({ question }),
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    renderAnswer(data.question, data.answer, data.sources || []);
+                } else {
+                    toast(data.detail || "Could not get an answer.");
+                }
+            } catch (error) {
+                toast("Request failed: " + error.message);
+            } finally {
+                els.askButton.disabled = false;
+                els.askButton.textContent = "Ask question";
+            }
+        });
+
+        function renderAnswer(question, answer, sources) {
+            els.chatEmpty.hidden = true;
+            els.conversation.hidden = false;
+            const sourcesHtml = sources
+                .map((source) => `<span class="source">${escapeHtml(source.name)} &middot; page ${escapeHtml(source.page)}</span>`)
+                .join("");
+            els.conversation.innerHTML = `
+                <div class="message question-message"><span class="message-label">You asked</span>${escapeHtml(question)}</div>
+                <div class="message answer-message"><span class="message-label">Document Q&A</span>${escapeHtml(answer)}
+                    <div class="sources">${sourcesHtml}</div>
+                </div>
+            `;
+        }
+
+        // ---- Initial load ----
+        loadDocuments();
+    </script>
+</body>
+
+</html>
